@@ -44,6 +44,24 @@ Unlike other browser agents locked to a single provider, BrowserKing lets you **
 
 Each provider gets its own **theme color** throughout the UI — the sidebar, send button, glow effects, and page border all match your active provider.
 
+## Run Local Models
+
+BrowserKing works with **any OpenAI-compatible API**, which means you can run it with local models too. Point it at [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), [LocalAI](https://localai.io), or any other local inference server that exposes an OpenAI-compatible endpoint.
+
+**Setup:**
+1. Start your local server (e.g., `ollama serve` or launch LM Studio)
+2. In BrowserKing settings, select the **Custom** provider
+3. Set the base URL to your local endpoint (e.g., `http://localhost:11434/v1` for Ollama)
+4. Enter any string as the API key (local servers usually don't require one, but the field can't be empty)
+5. Select or type your model name
+
+**Best models for local browser agents:**
+- `llama-4-scout` or `llama-4-maverick` (vision + tool use)
+- `qwen2.5-vl` (strong vision)
+- Any model with vision and function calling support
+
+> **Note:** Local model support is experimental. Performance depends heavily on your hardware and the model's ability to handle tool calls and vision inputs. Cloud providers with dedicated function calling support will generally give the most reliable results. If you run into issues, please [open an issue](https://github.com/Mushisushi28/BrowserKing/issues) — we'd love to hear what works and what doesn't.
+
 ## Features
 
 - **Multi-provider support** — Switch between providers and models mid-conversation from the dropdown
@@ -101,6 +119,20 @@ Key files:
 | `brand-overlay.js` | Page glow border and stop button theming |
 | `sidepanel-provider-menu.js` | Provider/model dropdown UI |
 | `provider-settings.js` | Settings page for API keys and configuration |
+
+## Roadmap
+
+- [ ] **Persistent page glow** — Fix the colored glow border so it reliably pulses for all providers during agent activity
+- [ ] **Conversation history** — Save and resume past agent sessions
+- [ ] **Multi-tab workflows** — Coordinate actions across multiple tabs in a single task
+- [ ] **Prompt templates** — Pre-built task templates for common workflows (form filling, data extraction, price comparison)
+- [ ] **Better local model support** — Improve tool call translation for models with non-standard function calling formats
+- [ ] **Custom system prompts** — Let users customize the agent's behavior and personality
+- [ ] **Export to Playwright/Puppeteer** — Convert recorded workflows to automation scripts
+- [ ] **Provider cost tracking** — Track token usage and estimated cost per conversation
+- [ ] **Firefox & Edge support** — Port the extension to other Chromium and non-Chromium browsers
+
+Have a feature idea? [Open an issue](https://github.com/Mushisushi28/BrowserKing/issues) or submit a PR.
 
 ## License
 
