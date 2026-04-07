@@ -1076,6 +1076,7 @@
 
       headers.delete('x-api-key');
       headers.delete('anthropic-version');
+      headers.delete('anthropic-beta');
       headers.delete('anthropic-dangerous-direct-browser-access');
       headers.set('Authorization', `Bearer ${provider.apiKey || ''}`);
       headers.set('Content-Type', 'application/json');
