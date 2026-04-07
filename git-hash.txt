@@ -1,1 +1,4 @@
 1d6d6c2acadae08b5fc7c7aa4a1160d9eb0527c9
+# upstream extension version: 1.0.62.1 (danfohhfmbeahkgpbeibgibfpkhokbfp)
+# synced with Chrome prodversion: 124.0.0.0 (fallback; live download was unavailable)
+# sync date: 2026-04-07
