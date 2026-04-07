@@ -59,7 +59,7 @@
 
     const apiKeyLabel = isVertex ? 'Access Token' : 'API Key';
     const apiKeyHint = isVertex
-      ? `<small>Run <code>gcloud auth print-access-token</code> and paste here. Ensure ADC is set up: <code>gcloud auth application-default login</code>. Tokens expire after ~1 hour.</small>`
+      ? `<small>Run <code>gcloud auth print-access-token</code> and paste here. Prerequisite: <code>gcloud auth login</code>. Tokens expire after ~1 hour — re-run to refresh.</small>`
       : `<small>${definition.requiresApiKey ? 'Only providers with a key appear in the sidepanel picker.' : 'Local or proxy provider.'}</small>`;
 
     const baseUrlValue = isVertex
