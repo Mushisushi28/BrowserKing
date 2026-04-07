@@ -24,3 +24,7 @@ credentials.json
 
 # Debug logs
 *.log
+
+# Local upstream sync artifacts (produced by Makefile / apply_upstream.py)
+upstream.crx
+upstream_unpacked/
