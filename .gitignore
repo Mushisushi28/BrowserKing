@@ -12,6 +12,11 @@ desktop.ini
 # Node
 node_modules/
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
 # Secrets (users add their own keys via the settings UI)
 *.env
 .env.*
