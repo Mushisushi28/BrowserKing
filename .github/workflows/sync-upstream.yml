@@ -1,0 +1,196 @@
+name: Sync Upstream Claude for Chrome Assets
+
+on:
+  schedule:
+    # Run weekly every Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      force_sync:
+        description: 'Force full sync even if version is unchanged or a PR already exists'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_CRX_ID: danfohhfmbeahkgpbeibgibfpkhokbfp
+      BASE_BRANCH: periodicUpdates
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout periodicUpdates branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_BRANCH }}
+          fetch-depth: 0
+
+      # ── Step 1: Resolve the latest stable Chrome version ─────────────────────
+      - name: Get latest stable Chrome version
+        id: chrome_version
+        run: |
+          # Primary: official Chrome Version History API
+          CHROME_VERSION=$(curl -fsSL \
+            "https://versionhistory.googleapis.com/v1/chrome/platforms/linux/channels/stable/versions?filter=endtime=none&order_by=version+desc&page_size=1" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['versions'][0]['version'])" 2>/dev/null \
+            || echo "")
+
+          # Fallback: Chromium Dash releases endpoint
+          if [ -z "$CHROME_VERSION" ]; then
+            CHROME_VERSION=$(curl -fsSL \
+              "https://chromiumdash.appspot.com/fetch_releases?channel=Stable&platform=Linux&num=1" \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['version'])" 2>/dev/null \
+              || echo "")
+          fi
+
+          # Hard-coded fallback (keep this updated to a recent known-good release)
+          if [ -z "$CHROME_VERSION" ]; then
+            CHROME_VERSION="138.0.7204.51"
+            echo "::warning::Could not fetch Chrome version dynamically; using fallback $CHROME_VERSION"
+          fi
+
+          echo "chrome_version=$CHROME_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using Chrome prodversion: $CHROME_VERSION"
+
+      # ── Step 2: Download the CRX ──────────────────────────────────────────────
+      - name: Download latest Claude for Chrome CRX
+        run: |
+          CHROME_VERSION="${{ steps.chrome_version.outputs.chrome_version }}"
+          CRX_URL="https://clients2.google.com/service/update2/crx?response=redirect&prodversion=${CHROME_VERSION}&acceptformat=crx2,crx3&x=id%3D${UPSTREAM_CRX_ID}%26uc"
+          echo "Downloading from: $CRX_URL"
+
+          HTTP_STATUS=$(curl -L -o upstream.crx -w "%{http_code}" "$CRX_URL")
+          echo "HTTP status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" != "200" ] || [ ! -s upstream.crx ]; then
+            echo "::error::Failed to download CRX (HTTP $HTTP_STATUS). Cannot proceed with sync."
+            exit 1
+          fi
+
+          echo "Downloaded $(wc -c < upstream.crx) bytes. File type: $(file upstream.crx)"
+
+      # ── Step 3: Peek at manifest.json only, then decide whether to proceed ────
+      #    check_upstream.py is the sole gate for all subsequent heavy work.
+      #    It exits early (should_sync=false) when:
+      #      a) same version is already recorded in git-hash.txt
+      #      b) a sync branch or open PR already exists for this version
+      #    Both checks are bypassed by force_sync=true.
+      - name: Decide whether to proceed with sync
+        id: decide
+        env:
+          FORCE_SYNC: ${{ github.event.inputs.force_sync }}
+        run: python3 .github/scripts/check_upstream.py
+
+      # ── Summary step when we decide to skip ──────────────────────────────────
+      - name: Skip summary
+        if: steps.decide.outputs.should_sync == 'false'
+        run: echo "⏭️  Sync skipped - ${{ steps.decide.outputs.skip_reason }}"
+
+      # ── Step 4: Extract + diff + manifest merge + model registry update ───────
+      #    apply_upstream.py does all the heavy lifting in one Python invocation.
+      - name: Apply upstream changes
+        if: steps.decide.outputs.should_sync == 'true'
+        run: python3 .github/scripts/apply_upstream.py
+
+      # ── Step 5: Update git-hash.txt to record this processed version ──────────
+      - name: Update git-hash.txt
+        if: steps.decide.outputs.should_sync == 'true'
+        run: |
+          UPSTREAM_VERSION="${{ steps.decide.outputs.upstream_version }}"
+          CHROME_VERSION="${{ steps.chrome_version.outputs.chrome_version }}"
+          SYNC_DATE=$(date -u +%Y-%m-%d)
+          UPSTREAM_HASH=$(sha256sum upstream_unpacked/manifest.json | awk '{print $1}')
+
+          printf '%s\n# upstream extension version: %s (danfohhfmbeahkgpbeibgibfpkhokbfp)\n# synced with Chrome prodversion: %s\n# sync date: %s\n' \
+            "${UPSTREAM_HASH}" "${UPSTREAM_VERSION}" "${CHROME_VERSION}" "${SYNC_DATE}" \
+            > git-hash.txt
+
+          echo "git-hash.txt updated for version ${UPSTREAM_VERSION}"
+
+      # ── Step 6: Bail out cleanly if nothing actually changed on disk ──────────
+      - name: Check for file-level changes
+        id: check_changes
+        if: steps.decide.outputs.should_sync == 'true'
+        run: |
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "no_file_changes=true" >> "$GITHUB_OUTPUT"
+            echo "No file changes after applying upstream — nothing to commit."
+          else
+            echo "no_file_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip — no file-level changes despite version bump
+        if: >
+          steps.decide.outputs.should_sync == 'true' &&
+          steps.check_changes.outputs.no_file_changes == 'true'
+        run: |
+          echo "✅ Upstream v${{ steps.decide.outputs.upstream_version }} produced no file diffs. No PR needed."
+
+      # ── Step 7: Commit, push, open PR ─────────────────────────────────────────
+      - name: Commit changes to sync branch
+        if: >
+          steps.decide.outputs.should_sync == 'true' &&
+          steps.check_changes.outputs.no_file_changes == 'false'
+        run: |
+          UPSTREAM_VERSION="${{ steps.decide.outputs.upstream_version }}"
+          SYNC_DATE=$(date -u +%Y-%m-%d)
+          SYNC_BRANCH="sync/upstream-claude-for-chrome-${UPSTREAM_VERSION}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "${SYNC_BRANCH}"
+          git add -A
+          git commit -m "chore: sync upstream Claude for Chrome assets v${UPSTREAM_VERSION} (${SYNC_DATE})"
+          git push origin "${SYNC_BRANCH}"
+
+          echo "sync_branch=${SYNC_BRANCH}"           >> "$GITHUB_ENV"
+          echo "upstream_version=${UPSTREAM_VERSION}" >> "$GITHUB_ENV"
+          echo "sync_date=${SYNC_DATE}"               >> "$GITHUB_ENV"
+
+      - name: Open Pull Request
+        if: >
+          steps.decide.outputs.should_sync == 'true' &&
+          steps.check_changes.outputs.no_file_changes == 'false'
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "(none)")
+
+          gh pr create \
+            --base "${BASE_BRANCH}" \
+            --head "${sync_branch}" \
+            --title "chore: sync upstream Claude for Chrome assets v${upstream_version} (${sync_date})" \
+            --body "## Upstream Sync — Claude for Chrome Extension
+
+          **Extension ID:** \`danfohhfmbeahkgpbeibgibfpkhokbfp\`
+          **Previous version:** \`${{ steps.decide.outputs.last_processed }}\`
+          **Upstream version synced:** \`${upstream_version}\`
+          **Chrome prodversion used:** \`${{ steps.chrome_version.outputs.chrome_version }}\`
+          **Sync date:** ${sync_date}
+
+          ### Files Updated
+
+          \`\`\`
+          ${CHANGED}
+          \`\`\`
+
+          ### Manifest merge strategy
+
+          - Version bumped to upstream value.
+          - Permissions and host_permissions are the **union** of both sets (nothing removed).
+          - BrowserKing identity fields (\`name\`, \`description\`, \`icons\`) are always preserved.
+          - \`web_accessible_resources\` entries are merged by match-pattern key.
+
+          ### BrowserKing-specific files preserved (not overwritten)
+
+          \`api-adapter.js\`, \`brand-overlay.js\`, \`claude_icon.svg\`, \`icon-128.png\`,
+          \`options-provider-tab.js\`, \`provider-config.js\`, \`provider-registry.js\`,
+          \`provider-settings.html\`, \`provider-settings.js\`, \`sidepanel-provider-menu.js\`,
+          \`theme-init.js\`, \`ui-branding.js\`, \`voice-input.js\`, \`README.md\`, \`.gitignore\`
+
+          ---
+          *Generated automatically by [sync-upstream.yml](.github/workflows/sync-upstream.yml)*"

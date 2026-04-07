@@ -24,7 +24,7 @@ BrowserKing is a Chrome extension that gives any LLM the ability to see and cont
 - **Open tabs** and work across multiple pages
 - **Record and replay workflows** for repetitive tasks
 
-Unlike other browser agents locked to a single provider, BrowserKing lets you **bring your own API key** from any OpenAI-compatible provider — or use the Anthropic API directly.
+Unlike other browser agents locked to a single provider, BrowserKing lets you **bring your own API key** from any OpenAI-compatible provider — or use the Anthropic API directly, including through Google Vertex AI.
 
 ## Supported Providers
 
@@ -32,6 +32,7 @@ Unlike other browser agents locked to a single provider, BrowserKing lets you **
 |----------|--------|--------|
 | **OpenAI** | GPT-4o, GPT-4.1, o3, o4-mini | Yes |
 | **Anthropic** | Claude 4 Sonnet, Claude 4 Opus | Yes |
+| **Google Vertex AI (Claude)** | Claude Opus/Sonnet/Haiku (4.5, 4.6, 3.5) | Yes |
 | **Google** | Gemini 2.5 Pro/Flash | Yes |
 | **xAI** | Grok 3, Grok 3 Mini | Yes |
 | **DeepSeek** | DeepSeek-V3, DeepSeek-R1 | No |
@@ -61,6 +62,30 @@ BrowserKing works with **any OpenAI-compatible API**, which means you can run it
 - Any model with vision and function calling support
 
 > **Note:** Local model support is experimental. Performance depends heavily on your hardware and the model's ability to handle tool calls and vision inputs. Cloud providers with dedicated function calling support will generally give the most reliable results. If you run into issues, please [open an issue](https://github.com/Mushisushi28/BrowserKing/issues) — we'd love to hear what works and what doesn't.
+
+## Google Vertex AI (Claude)
+
+BrowserKing supports Claude models hosted on **Google Cloud Vertex AI** using Application Default Credentials (ADC). This lets you use your GCP identity instead of an Anthropic API key.
+
+**Prerequisites:**
+- A Google Cloud project with the [Vertex AI API enabled](https://console.cloud.google.com/apis/library/aiplatform.googleapis.com)
+- The [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (`gcloud`) installed and authenticated
+
+**Setup:**
+1. Authenticate with Google Cloud:
+   ```
+   gcloud auth login
+   ```
+2. In BrowserKing settings, select the **Google Vertex AI (Claude)** provider
+3. Enter your **Project ID** (find it with `gcloud config get-value project` or `gcloud projects list`)
+4. Set the **Location** (default: `global`; see available regions with `gcloud ai locations list`)
+5. Generate a short-lived access token and paste it into the **Access Token** field:
+   ```
+   gcloud auth print-access-token
+   ```
+6. Select a Claude model and enable the provider
+
+> **Note:** Access tokens expire after ~1 hour. Re-run `gcloud auth print-access-token` and update the field when your token expires.
 
 ## Features
 
