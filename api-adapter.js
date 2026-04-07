@@ -53,6 +53,102 @@
   const originalFetch = globalThis.fetch.bind(globalThis);
   const registry = globalThis.BrowserKingRegistry || null;
 
+  // Singleton guard — prevents stacking dialogs from concurrent 401s
+  let activeReauthPromise = null;
+
+  function showTokenReauthDialog() {
+    if (activeReauthPromise) return activeReauthPromise;
+
+    activeReauthPromise = new Promise((resolve, reject) => {
+      const overlay = document.createElement('div');
+      Object.assign(overlay.style, {
+        position: 'fixed', inset: '0', zIndex: '99999',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)'
+      });
+
+      const card = document.createElement('div');
+      Object.assign(card.style, {
+        background: 'hsl(var(--bg-000))', border: '1px solid hsl(var(--border-300) / 0.26)',
+        borderRadius: '18px', padding: '24px', maxWidth: '420px', width: '90%',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.3)', fontFamily: 'var(--font-ui, system-ui, sans-serif)'
+      });
+
+      const heading = document.createElement('h2');
+      Object.assign(heading.style, {
+        color: 'hsl(var(--text-100))', fontSize: '17px', fontWeight: '600', margin: '0 0 12px'
+      });
+      heading.textContent = 'Access Token Expired';
+
+      const body = document.createElement('p');
+      Object.assign(body.style, {
+        color: 'hsl(var(--text-300))', fontSize: '13px', lineHeight: '1.55', margin: '0 0 12px'
+      });
+      body.textContent = 'Your Google Cloud access token has expired. Generate a new one and paste it below.';
+
+      const codeBlock = document.createElement('code');
+      Object.assign(codeBlock.style, {
+        display: 'block', background: 'hsl(var(--bg-100))',
+        border: '1px solid hsl(var(--border-300) / 0.2)', borderRadius: '8px',
+        padding: '10px 12px', fontFamily: 'ui-monospace, "Cascadia Code", "Source Code Pro", monospace',
+        fontSize: '12px', color: 'hsl(var(--text-100))', userSelect: 'all',
+        margin: '0 0 14px', cursor: 'pointer'
+      });
+      codeBlock.textContent = 'gcloud auth print-access-token';
+
+      const textarea = document.createElement('textarea');
+      Object.assign(textarea.style, {
+        width: '100%', height: '64px', background: 'hsl(var(--bg-000))',
+        border: '1px solid hsl(var(--border-300) / 0.26)', color: 'hsl(var(--text-100))',
+        borderRadius: '12px', padding: '12px 14px', resize: 'vertical',
+        fontFamily: 'ui-monospace, "Cascadia Code", "Source Code Pro", monospace',
+        fontSize: '13px', boxSizing: 'border-box'
+      });
+      textarea.placeholder = 'Paste access token here';
+
+      const buttons = document.createElement('div');
+      Object.assign(buttons.style, {
+        display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px'
+      });
+
+      const btnStyle = { border: '0', borderRadius: '12px', padding: '11px 14px', fontSize: '13px', fontWeight: '560', cursor: 'pointer' };
+
+      const cancelBtn = document.createElement('button');
+      Object.assign(cancelBtn.style, { ...btnStyle, background: 'hsl(var(--bg-100))', color: 'hsl(var(--text-200))', border: '1px solid hsl(var(--border-300) / 0.2)' });
+      cancelBtn.textContent = 'Cancel';
+
+      const updateBtn = document.createElement('button');
+      Object.assign(updateBtn.style, { ...btnStyle, background: 'hsl(var(--brand-100, 15 79% 60%))', color: 'white' });
+      updateBtn.textContent = 'Update Token';
+
+      buttons.append(cancelBtn, updateBtn);
+      card.append(heading, body, codeBlock, textarea, buttons);
+      overlay.append(card);
+      document.body.append(overlay);
+      textarea.focus();
+
+      function cleanup() {
+        overlay.remove();
+        activeReauthPromise = null;
+      }
+
+      updateBtn.addEventListener('click', () => {
+        const token = textarea.value.trim();
+        if (!token) { textarea.focus(); return; }
+        cleanup();
+        resolve(token);
+      });
+
+      cancelBtn.addEventListener('click', () => { cleanup(); reject(new Error('cancelled')); });
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) { cleanup(); reject(new Error('cancelled')); } });
+      document.addEventListener('keydown', function onKey(e) {
+        if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); cleanup(); reject(new Error('cancelled')); }
+      });
+    });
+
+    return activeReauthPromise;
+  }
+
   async function writeDebugLog(entry) {
     try {
       if (!globalThis.chrome?.storage?.local) {
@@ -1116,6 +1212,39 @@
           status: vertexResponse.status,
           body: errorText
         });
+
+        // 401 UNAUTHENTICATED — prompt user for a fresh access token
+        if (vertexResponse.status === 401) {
+          try {
+            const newToken = await showTokenReauthDialog();
+
+            // Persist the new token to provider state
+            if (registry?.updateState) {
+              await registry.updateState((draft) => {
+                draft.providers.vertexAnthropic.apiKey = newToken;
+              });
+            }
+
+            // Retry the request with the new token
+            headers.set('Authorization', `Bearer ${newToken}`);
+            const retryResponse = await originalFetch(upstreamUrl, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(upstreamPayload)
+            });
+
+            if (!retryResponse.ok) {
+              const retryError = await retryResponse.text();
+              return createAnthropicError(`Vertex AI error after token refresh (${retryResponse.status}): ${retryError}`, retryResponse.status);
+            }
+
+            return retryResponse;
+          } catch (dialogError) {
+            // User cancelled the dialog — return the original error
+            return createAnthropicError(`Vertex AI error (401): ${errorText}`, 401);
+          }
+        }
+
         return createAnthropicError(`Vertex AI error (${vertexResponse.status}): ${errorText}`, vertexResponse.status);
       }
 
