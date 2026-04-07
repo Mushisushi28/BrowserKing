@@ -359,6 +359,27 @@
         createModel('gpt-4o-mini', 'Gateway Default', { supportsVision: true })
       ],
       note: 'Use this for Amazon Bedrock or other providers behind a LiteLLM-compatible gateway.'
+    },
+    vertexAnthropic: {
+      id: 'vertexAnthropic',
+      label: 'Google Vertex AI (Claude)',
+      transport: 'vertexAnthropic',
+      color: '#4285F4',
+      colorDark: '#8AB4F8',
+      requiresApiKey: true,
+      defaultBaseUrl: 'https://global-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/global/publishers/anthropic',
+      defaultModel: 'claude-opus-4-6',
+      defaultLocation: 'global',
+      models: [
+        createModel('claude-opus-4-6', 'Claude Opus 4.6', { supportsVision: true }),
+        createModel('claude-sonnet-4-6', 'Claude Sonnet 4.6', { supportsVision: true }),
+        createModel('claude-opus-4-5', 'Claude Opus 4.5', { supportsVision: true }),
+        createModel('claude-sonnet-4-5', 'Claude Sonnet 4.5', { supportsVision: true }),
+        createModel('claude-haiku-4-5', 'Claude Haiku 4.5', { supportsVision: true }),
+        createModel('claude-3-5-sonnet-v2@20241022', 'Claude 3.5 Sonnet v2', { supportsVision: true }),
+        createModel('claude-3-5-haiku@20241022', 'Claude 3.5 Haiku', { supportsVision: true }),
+        createModel('claude-3-opus@20240229', 'Claude 3 Opus', { supportsVision: true })
+      ]
     }
   };
 
@@ -405,7 +426,7 @@
   function buildDefaultState() {
     const providers = {};
     Object.values(PROVIDERS).forEach((provider) => {
-      providers[provider.id] = {
+      const entry = {
         enabled: provider.id === 'zaiCoding',
         apiKey: '',
         baseUrl: provider.defaultBaseUrl,
@@ -413,6 +434,13 @@
         models: deepClone(provider.models),
         lastSyncedAt: null
       };
+
+      if (provider.defaultLocation !== undefined) {
+        entry.projectId = '';
+        entry.location = provider.defaultLocation;
+      }
+
+      providers[provider.id] = entry;
     });
 
     return {
@@ -575,7 +603,7 @@
     }
 
     // Anthropic: all Claude models support vision
-    if (providerId === 'anthropic') {
+    if (providerId === 'anthropic' || providerId === 'vertexAnthropic') {
       return /claude/.test(value);
     }
 
@@ -664,7 +692,7 @@
 
   async function fetchProviderModels(providerId, providerState) {
     const definition = getProviderDefinition(providerId);
-    if (providerId === 'anthropic') {
+    if (providerId === 'anthropic' || providerId === 'vertexAnthropic') {
       return deepClone(definition.models);
     }
 

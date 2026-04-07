@@ -199,6 +199,8 @@
         baseUrl: state.baseUrl,
         apiKey: state.apiKey,
         model: state.model,
+        projectId: state.projectId || '',
+        location: state.location || 'global',
         supportsVision: registry.modelSupportsVision(config, definition.id, state.model)
       };
     }
@@ -1059,7 +1061,67 @@
       return response;
     }
 
-    // Google Gemini OpenAI-compat endpoint uses ?key= param; remove Bearer header to avoid conflicts
+    if (provider.transport === 'vertexAnthropic') {
+      const location = provider.location || 'global';
+      const projectId = provider.projectId || '';
+
+      if (!projectId) {
+        return createAnthropicError('Google Vertex AI requires a Project ID. Please set it in Provider Settings.', 400);
+      }
+
+      const targetModel = requestedModel;
+      const vertexBase = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/anthropic/models/${targetModel}`;
+      const endpoint = anthropicRequest.stream ? ':streamRawPredict' : ':rawPredict';
+      const upstreamUrl = `${vertexBase}${endpoint}`;
+
+      headers.delete('x-api-key');
+      headers.delete('anthropic-version');
+      headers.delete('anthropic-beta');
+      headers.delete('anthropic-dangerous-direct-browser-access');
+      headers.set('Authorization', `Bearer ${provider.apiKey || ''}`);
+      headers.set('Content-Type', 'application/json');
+
+      // Vertex AI uses anthropic_version in the body, not as a header
+      const upstreamPayload = {
+        ...anthropicRequest,
+        anthropic_version: 'vertex-2023-10-16',
+        model: undefined
+      };
+      // Remove model key entirely — it is encoded in the Vertex AI URL
+      delete upstreamPayload.model;
+
+      await writeDebugLog({
+        phase: 'vertexAnthropic_request',
+        requestedModel: targetModel,
+        upstreamUrl,
+        anthropicRequest: upstreamPayload
+      });
+
+      let vertexResponse;
+      try {
+        vertexResponse = await originalFetch(upstreamUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(upstreamPayload)
+        });
+      } catch (error) {
+        console.error('[API Adapter] Vertex AI fetch failed:', error);
+        return createAnthropicError(error.message || 'Failed to reach Google Vertex AI.', 502);
+      }
+
+      if (!vertexResponse.ok) {
+        const errorText = await vertexResponse.text();
+        await writeDebugLog({
+          phase: 'vertexAnthropic_error',
+          status: vertexResponse.status,
+          body: errorText
+        });
+        return createAnthropicError(`Vertex AI error (${vertexResponse.status}): ${errorText}`, vertexResponse.status);
+      }
+
+      // Vertex AI returns native Anthropic format — pass through directly
+      return vertexResponse;
+    }
     let rawUpstreamUrl = `${String(provider.baseUrl || DEFAULT_PROVIDER_CONFIG.zai.baseUrl).replace(/\/+$/, '')}/chat/completions`;
     if (provider.id === 'google' && provider.apiKey) {
       rawUpstreamUrl = `${rawUpstreamUrl}?key=${encodeURIComponent(provider.apiKey)}`;
