@@ -183,7 +183,11 @@ def _make_label(model_id: str) -> str:
 
 
 def update_provider_registry(upstream_dir: str, registry_path: str) -> list[str]:
-    """Scan upstream JS for new Claude model IDs and append them to provider-registry.js."""
+    """Scan upstream JS for new generic (undated) Claude model IDs and append them to provider-registry.js.
+
+    Dated snapshot aliases (e.g. claude-sonnet-4-5-20250929) are intentionally
+    skipped to reduce churn — only stable undated identifiers are tracked.
+    """
     upstream_models: set[str] = set()
     for dirpath, _dirs, filenames in os.walk(upstream_dir):
         for filename in filenames:
@@ -199,15 +203,14 @@ def update_provider_registry(upstream_dir: str, registry_path: str) -> list[str]
                 re.findall(r"claude-(?:opus|sonnet|haiku)-[\d][\w@.-]*", content)
             )
 
-    dated = sorted(m for m in upstream_models if re.search(r"-\d{8}", m))
+    # Only keep generic (undated) model IDs — skip snapshot aliases like *-20250929
     generic = sorted(
         m
         for m in upstream_models
         if not re.search(r"-\d{8}", m)
         and re.match(r"^claude-(?:opus|sonnet|haiku)-[\d]", m)
     )
-    print(f"Dated upstream models : {dated}")
-    print(f"Generic upstream models: {generic}")
+    print(f"Generic upstream models (dated aliases skipped): {generic}")
 
     with open(registry_path, encoding="utf-8") as f:
         registry = f.read()
@@ -215,7 +218,7 @@ def update_provider_registry(upstream_dir: str, registry_path: str) -> list[str]
     existing = set(re.findall(r"createModel\('([^']+)'", registry))
 
     new_entries = [
-        (mid, _make_label(mid)) for mid in dated + generic if mid not in existing
+        (mid, _make_label(mid)) for mid in generic if mid not in existing
     ]
 
     if not new_entries:
