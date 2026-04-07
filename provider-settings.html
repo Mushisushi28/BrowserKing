@@ -241,6 +241,16 @@
         color: hsl(var(--success-100));
       }
 
+      code {
+        font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+        font-size: 11px;
+        background: hsl(var(--bg-100));
+        border: 1px solid hsl(var(--border-300) / 0.2);
+        border-radius: 4px;
+        padding: 1px 4px;
+        word-break: break-all;
+      }
+
       .card-note {
         padding: 10px 12px;
         border-radius: 12px;
@@ -298,6 +308,7 @@
         <div class="hero-meta">
           <span class="pill">OpenAI-compatible routing</span>
           <span class="pill">Native Anthropic support</span>
+          <span class="pill">Google Vertex AI (ADC)</span>
           <span class="pill">Ollama local models</span>
           <span class="pill">z.ai standard + coding endpoints</span>
         </div>

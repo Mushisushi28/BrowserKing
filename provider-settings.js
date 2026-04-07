@@ -25,10 +25,49 @@
       .replaceAll('"', '&quot;');
   }
 
+  function buildVertexBaseUrl(projectId, location) {
+    const loc = (location || 'global').trim();
+    const proj = (projectId || '').trim();
+    if (!proj) {
+      return `https://${loc}-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/${loc}/publishers/anthropic`;
+    }
+    return `https://${loc}-aiplatform.googleapis.com/v1/projects/${proj}/locations/${loc}/publishers/anthropic`;
+  }
+
   function renderCard(providerId, definition, providerState) {
     const isActive = state.activeProvider === providerId;
     const note = definition.note
       ? `<div class="card-note">${escapeHtml(definition.note)}</div>`
+      : '';
+
+    const isVertex = definition.transport === 'vertexAnthropic';
+
+    const vertexFields = isVertex ? `
+      <div class="row">
+        <div class="field">
+          <label>Project ID</label>
+          <input data-action="project-id" placeholder="my-gcp-project-id" value="${escapeHtml(providerState.projectId || '')}" />
+          <small>Get it: <code>gcloud config get-value project</code> or <code>gcloud projects list</code></small>
+        </div>
+        <div class="field">
+          <label>Location</label>
+          <input data-action="vertex-location" placeholder="global" value="${escapeHtml(providerState.location || 'global')}" />
+          <small>e.g. <code>global</code>, <code>us-east5</code>, <code>europe-west1</code>. Check: <code>gcloud ai locations list</code></small>
+        </div>
+      </div>
+    ` : '';
+
+    const apiKeyLabel = isVertex ? 'Access Token' : 'API Key';
+    const apiKeyHint = isVertex
+      ? `<small>Run <code>gcloud auth print-access-token</code> and paste here. Ensure ADC is set up: <code>gcloud auth application-default login</code>. Tokens expire after ~1 hour.</small>`
+      : `<small>${definition.requiresApiKey ? 'Only providers with a key appear in the sidepanel picker.' : 'Local or proxy provider.'}</small>`;
+
+    const baseUrlValue = isVertex
+      ? escapeHtml(buildVertexBaseUrl(providerState.projectId, providerState.location))
+      : escapeHtml(providerState.baseUrl);
+
+    const baseUrlHint = isVertex
+      ? `<small>Auto-constructed from Project ID and Location above. Edit manually to override.</small>`
       : '';
 
     return `
@@ -38,7 +77,7 @@
             <span class="provider-dot"></span>
             <div class="provider-heading">
               <h2>${escapeHtml(definition.label)}</h2>
-              <p>${definition.transport === 'anthropic' ? 'Native Anthropic messages' : 'OpenAI-compatible chat completions'}</p>
+              <p>${definition.transport === 'anthropic' || definition.transport === 'vertexAnthropic' ? 'Native Anthropic messages' : 'OpenAI-compatible chat completions'}</p>
             </div>
           </div>
           <div class="provider-actions">
@@ -51,15 +90,18 @@
 
         ${note}
 
+        ${vertexFields}
+
         <div class="field">
           <label>Base URL</label>
-          <input data-action="base-url" value="${escapeHtml(providerState.baseUrl)}" />
+          <input data-action="base-url" value="${baseUrlValue}" ${isVertex ? 'data-vertex-url="true"' : ''} />
+          ${baseUrlHint}
         </div>
 
         <div class="field">
-          <label>API Key</label>
-          <input data-action="api-key" type="password" placeholder="${definition.requiresApiKey ? 'Enter API key' : 'Not required for this provider'}" value="${escapeHtml(providerState.apiKey || '')}" />
-          <small>${definition.requiresApiKey ? 'Only providers with a key appear in the sidepanel picker.' : 'Local or proxy provider.'}</small>
+          <label>${escapeHtml(apiKeyLabel)}</label>
+          <input data-action="api-key" type="password" placeholder="${definition.requiresApiKey ? `Enter ${apiKeyLabel.toLowerCase()}` : 'Not required for this provider'}" value="${escapeHtml(providerState.apiKey || '')}" />
+          ${apiKeyHint}
         </div>
 
         <div class="row">
@@ -207,6 +249,26 @@
 
     if (action === 'api-key') {
       providerState.apiKey = event.target.value.trim();
+    }
+
+    if (action === 'project-id') {
+      providerState.projectId = event.target.value.trim();
+      const urlInput = card.querySelector('input[data-vertex-url="true"]');
+      if (urlInput) {
+        const newUrl = buildVertexBaseUrl(providerState.projectId, providerState.location);
+        urlInput.value = newUrl;
+        providerState.baseUrl = newUrl;
+      }
+    }
+
+    if (action === 'vertex-location') {
+      providerState.location = event.target.value.trim() || 'global';
+      const urlInput = card.querySelector('input[data-vertex-url="true"]');
+      if (urlInput) {
+        const newUrl = buildVertexBaseUrl(providerState.projectId, providerState.location);
+        urlInput.value = newUrl;
+        providerState.baseUrl = newUrl;
+      }
     }
   });
 
