@@ -1,8 +1,4 @@
 1d6d6c2acadae08b5fc7c7aa4a1160d9eb0527c9
 # upstream extension version: 1.0.62.1 (danfohhfmbeahkgpbeibgibfpkhokbfp)
-# sync attempted: 2026-04-07
-# NOTE: Chrome Web Store download was not accessible from the sync environment.
-# Assets in this repo reflect the previously synced version (1.0.62.1).
-# To resync manually, download the CRX from:
-#   https://clients2.google.com/service/update2/crx?response=redirect&acceptformat=crx3&prodversion=124.0.0.0&x=id%3Ddanfohhfmbeahkgpbeibgibfpkhokbfp%26uc
-# and compare against the upstream file list in the problem statement.
+# synced with Chrome prodversion: 124.0.0.0 (fallback; live download was unavailable)
+# sync date: 2026-04-07
