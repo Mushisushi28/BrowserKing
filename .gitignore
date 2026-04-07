@@ -12,6 +12,11 @@ desktop.ini
 # Node
 node_modules/
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
 # Secrets (users add their own keys via the settings UI)
 *.env
 .env.*
@@ -19,3 +24,7 @@ credentials.json
 
 # Debug logs
 *.log
+
+# Local upstream sync artifacts (produced by Makefile / apply_upstream.py)
+upstream.crx
+upstream_unpacked/
